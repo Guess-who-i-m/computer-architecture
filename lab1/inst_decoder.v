@@ -80,7 +80,7 @@ module inst_decoder(
     assign waddr = ({5{LW}}& inst[20:16]) | ({5{ADD}} & inst[15:11]) | ({5{SUB}} & inst[15:11]) | ({5{AND}} & inst[15:11]) | ({5{OR}} & inst[15:11]) | ({5{XOR}} & inst[15:11]) | ({5{MOVZ}} & inst[15:11])| ({5{SLL}} & inst[15:11])| ({5{CMP}} & inst[15:11]);
     assign raddr1 = inst[25:21];
     assign raddr2 = inst[20:16];
-    assign alu_en = ADD | SUB | AND | OR | XOR;
+    assign alu_en = ADD | SUB | AND | OR | XOR | SLL;
     assign alu_card = ({5{ADD }} & 5'b00001) | ({5{SUB}} & 5'b00011) | ({5{OR}} & 5'b01011) | ({5{AND}} & 5'b01100) | ({5{XOR}} & 5'b01110);
     assign jmp = J | BBT;
     assign bbt = BBT;

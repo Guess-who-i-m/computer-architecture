@@ -40,9 +40,8 @@ module cpu(
     output[31:0]    debug_wb_rf_wdata   // 当前指令需要写回的数据
 );
 
-//    wire[2:0] state;
     
-    
+   
     wire [31:0] rdata1; // 寄存器读端口1
     
     wire [31:0] rdata2; // 寄存器读端口2
@@ -54,11 +53,63 @@ module cpu(
     
     wire invalid;            // 无效指令标志
 
+        // ID/EX段间寄存器
+    reg [31:0] ID_EX_IR;
+    reg        ID_EX_we;
+    reg [4:0]  ID_EX_waddr;          // 寄存器写回要格外仔细考虑
+    reg        ID_EX_alu_en;         //用来在MEM/WB阶段判断写回什么数据
+    reg [4:0]  ID_EX_alu_card;       // 在EXE阶段让alu正确工作
+    reg        ID_EX_data_sram_en;
+    reg [3:0]  ID_EX_data_sram_wen;
+    reg        ID_EX_movz_en;
+    reg        ID_EX_sll_en;
+    reg        ID_EX_cmp_en;
+    reg [31:0] ID_EX_rdata1;
+    reg [31:0] ID_EX_rdata2;
+    reg [31:0] ID_EX_pc;
+    reg        ID_EX_invalid;
     
-
-
+    // EX/MEM
+    reg [31:0]  EX_MEM_IR;
+    reg         EX_MEM_we;
+    reg         EX_MEM_movz_en;
+    reg [4:0]   EX_MEM_waddr;
+    reg         EX_MEM_sll_en;
+    reg         EX_MEM_cmp_en;
+    reg         EX_MEM_alu_en;
+    reg [31:0]  EX_MEM_alu_out;
+    reg [31:0]  EX_MEM_rdata1;
+    reg [31:0]  EX_MEM_rdata2;
+    reg         EX_MEM_data_sram_en;
+    reg [3:0]   EX_MEM_data_sram_wen;
+    reg [31:0]  EX_MEM_pc;
+    reg         EX_MEM_invalid;
+    reg [31:0]  EX_MEM_wdata_cmp;
+    reg [31:0]  EX_MEM_data_sram_addr;
+    reg [31:0]  EX_MEM_data_sram_wdata;
+    reg [31:0]  EX_MEM_alu_data1;
+    reg [31:0]  EX_MEM_alu_data2;
     
-    
+    // MEM/WB
+    reg         MEM_WB_movz_en;
+    reg         MEM_WB_alu_en;
+    reg [31:0]  MEM_WB_alu_out;
+    reg [31:0]  MEM_WB_rdata1;
+    reg [31:0]  MEM_WB_rdata2;
+    reg [31:0]  MEM_WB_IR;
+    reg         MEM_WB_cmp_en;
+    reg         MEM_WB_movz_en;
+    reg         MEM_WB_sll_en;
+    reg         MEM_WB_data_sram_en;
+    reg [3:0]   MEM_WB_data_sram_wen;
+    reg         MEM_WB_we;
+    reg [4:0]   MEM_WB_waddr;
+    reg [31:0]  MEM_WB_pc;
+    reg         MEM_WB_invalid;
+    reg [31:0]  MEM_WB_data_sram_rdata;
+    reg [31:0]  MEM_WB_wdata;
+    reg [31:0]  MEM_WB_data_sram_addr;
+    reg [31:0]  MEM_WB_data_sram_wdata;
     
     //////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////     IF   ////////////////////////////////
@@ -76,6 +127,7 @@ module cpu(
     
     // 程序计数器，用于记录指令地址
     // 内部有两个寄存器，分别是npc和pc
+    // 增加输入信号，判断是不是发生了LW后ADD，之后想办法停止一周期取出指令，停止指令译码器的更新
     pc_register u_pc_register(
         .clk            (clk),          // 不受流水线管
         .jmp_addr       (jmp_addr),     // 在ID才能得到       
@@ -83,7 +135,9 @@ module cpu(
         .resetn         (resetn),       // 复位信号
         .npc            (npc),          // pc + 4
         .pc             (pc),          // 指令地址
-        .inst_sram_en   (inst_sram_en)  // 指令存储器读使能
+        .inst_sram_en   (inst_sram_en),  // 指令存储器读使能
+        .EX_MEM_IR      (ID_EX_IR),
+        .ID_EX_IR       (IF_ID_IR)
     );
    
     assign inst_sram_addr = pc;
@@ -169,82 +223,136 @@ module cpu(
     
     
     
-    // ID/EX段间寄存器
-    reg [31:0] ID_EX_IR;
-    reg        ID_EX_we;
-    reg [4:0]  ID_EX_waddr;          // 寄存器写回要格外仔细考虑
-    reg        ID_EX_alu_en;         //用来在MEM/WB阶段判断写回什么数据
-    reg [4:0]  ID_EX_alu_card;       // 在EXE阶段让alu正确工作
-    reg        ID_EX_data_sram_en;
-    reg [3:0]  ID_EX_data_sram_wen;
-    reg        ID_EX_movz_en;
-    reg        ID_EX_sll_en;
-    reg        ID_EX_cmp_en;
-    reg [31:0] ID_EX_rdata1;
-    reg [31:0] ID_EX_rdata2;
-    reg [31:0] ID_EX_pc;
-    reg        ID_EX_invalid;
+
     
     always @(posedge clk) begin
-        ID_EX_IR <= IF_ID_IR;
-        ID_EX_we <= we_decoder ;
-        ID_EX_waddr <= waddr;
-        ID_EX_alu_en <= alu_en;
-        ID_EX_alu_card <= alu_card;
-        ID_EX_data_sram_en <= sram_en;
-        ID_EX_data_sram_wen <= sram_wen;
-        ID_EX_sll_en <= sll_en;
-        ID_EX_cmp_en <= cmp_en;
-        ID_EX_rdata1 <= rdata1;
-        ID_EX_rdata2 <= rdata2;
-        ID_EX_pc     <= pc;
-        ID_EX_invalid<= invalid;
-        ID_EX_movz_en<= movz_en;
+//        ID_EX_IR <= IF_ID_IR;
+//        ID_EX_we <= we_decoder ;
+//        ID_EX_waddr <= waddr;
+//        ID_EX_alu_en <= alu_en;
+//        ID_EX_alu_card <= alu_card;
+//        ID_EX_data_sram_en <= sram_en;
+//        ID_EX_data_sram_wen <= sram_wen;
+//        ID_EX_sll_en <= sll_en;
+//        ID_EX_cmp_en <= cmp_en;
+//        ID_EX_rdata1 <= rdata1;
+//        ID_EX_rdata2 <= rdata2;
+//        ID_EX_pc     <= pc;
+//        ID_EX_invalid<= invalid;
+//        ID_EX_movz_en<= movz_en;
+        
+        // 流水线锁
+        if (ID_EX_IR[31:26] == 6'b100011 & IF_ID_IR[31:26] == 6'b000000 & (ID_EX_IR[20:16] == IF_ID_IR[25:21] | ID_EX_IR[20:16] == IF_ID_IR[20:16]) ) begin
+            // $display("Time %t: 预测到冲突，插入气泡. IF_ID_IR: %h, ID_EX_IR: %h",$time, IF_ID_IR, ID_EX_IR);
+            ID_EX_IR <= 32'b0;
+            ID_EX_we <= 0 ;
+            ID_EX_waddr <= 0;
+            ID_EX_alu_en <= 0;
+            ID_EX_alu_card <= 0;
+            ID_EX_data_sram_en <= 0;
+            ID_EX_data_sram_wen <= 0;
+            ID_EX_sll_en <= 0;
+            ID_EX_cmp_en <= 0;
+            ID_EX_rdata1 <= 0;
+            ID_EX_rdata2 <= 0;
+            // ID_EX_pc     <= 0;
+            ID_EX_invalid<= 1;
+            ID_EX_movz_en<= 0;
+        end else begin
+            // $display("Time %t: 气泡结束，正常. IF_ID_IR: %h, ID_EX_IR: %h",$time, IF_ID_IR, ID_EX_IR);
+            ID_EX_IR <= IF_ID_IR;
+            ID_EX_we <= we_decoder ;
+            ID_EX_waddr <= waddr;
+            ID_EX_alu_en <= alu_en;
+            ID_EX_alu_card <= alu_card;
+            ID_EX_data_sram_en <= sram_en;
+            ID_EX_data_sram_wen <= sram_wen;
+            ID_EX_sll_en <= sll_en;
+            ID_EX_cmp_en <= cmp_en;
+            ID_EX_rdata1 <= rdata1;
+            ID_EX_rdata2 <= rdata2;
+            ID_EX_pc     <= pc;
+            ID_EX_invalid<= invalid;
+            ID_EX_movz_en<= movz_en;
+        end
     end
     
     //////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////     EX   ////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
     
+    // 这是直接可以通过定向解决的
+    wire    [31:0]      alu_data1;
+    wire    [31:0]      alu_data2;
     
     
+    assign alu_data1 = ({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b000000) }} & EX_MEM_alu_out)  | 
+                       ({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b111110) }} & EX_MEM_wdata_cmp)| 
+                       ({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == MEM_WB_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (MEM_WB_IR[31:26] == 6'b000000) }} & MEM_WB_wdata)         & ~({32{(ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b000000) }}) & ~({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b111110) }} )   | 
+                       ({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == MEM_WB_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (MEM_WB_IR[31:26] == 6'b111110) }} & MEM_WB_wdata)           & ~({32{(ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b111110) }}) & ~({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b000000) }})  | 
+                       ({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == MEM_WB_IR[20:16]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (MEM_WB_IR[31:26] == 6'b100011) }} & MEM_WB_data_sram_rdata) & ~({32{(ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b000000) }}) & ~({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (EX_MEM_IR[31:26] == 6'b111110) }} ) |
+                       (ID_EX_rdata1 & ~({32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == EX_MEM_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & ((EX_MEM_IR[31:26] == 6'b000000) | (EX_MEM_IR[31:26] == 6'b111110)) }} | {32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == MEM_WB_IR[15:11]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & ((MEM_WB_IR[31:26] == 6'b000000) | (MEM_WB_IR[31:26] == 6'b111110)) }} | {32{(ID_EX_IR[25:21] != 0) & (ID_EX_IR[25:21] == MEM_WB_IR[20:16]) & ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ) & (MEM_WB_IR[31:26] == 6'b100011) }})) ;
+                       
+    assign alu_data2 = ({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b000000) }} & EX_MEM_alu_out)  | 
+                       ({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b111110) }} & EX_MEM_wdata_cmp)  |
+                       ({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == MEM_WB_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (MEM_WB_IR[31:26] == 6'b000000) }} & MEM_WB_wdata)         & ~({32{(ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b000000) }}) & ~({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b111110) }} ) |
+                       ({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == MEM_WB_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (MEM_WB_IR[31:26] == 6'b111110) }} & MEM_WB_wdata)           & ~({32{(ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b111110) }})   & ~({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b000000) }} ) |  
+                       ({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == MEM_WB_IR[20:16]) & (ID_EX_IR[31:26] == 6'b000000) & (MEM_WB_IR[31:26] == 6'b100011) }} & MEM_WB_data_sram_rdata )& ~({32{(ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b000000) }}) & ~({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & (EX_MEM_IR[31:26] == 6'b111110) }}) |
+                       (ID_EX_rdata2 & ~({32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & ((EX_MEM_IR[31:26] == 6'b000000) | (EX_MEM_IR[31:26] == 6'b111110) ) }} | {32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == MEM_WB_IR[15:11]) & (ID_EX_IR[31:26] == 6'b000000) & ((MEM_WB_IR[31:26] == 6'b000000)| (MEM_WB_IR[31:26] == 6'b111110)) }} | {32{(ID_EX_IR[20:16] != 0) & (ID_EX_IR[20:16] == MEM_WB_IR[20:16]) & (ID_EX_IR[31:26] == 6'b000000) & (MEM_WB_IR[31:26] == 6'b100011) }}));
+    
+//    always @(posedge clk) begin
+//         $display("Time %t: alu_data1: %h, ID_EX_rdata1: %h, alu_data2: %h,ID_EX_rdata2: %h, alu_out: %h", $time, alu_data1, ID_EX_rdata1, alu_data2, ID_EX_rdata2, alu_out);
+//    end
+    
+//    always @(posedge clk) begin
+//        $display("Time %t: j1: %b, j2: %b, j3: %b, j4: %b", $time, (ID_EX_IR[20:16] == EX_MEM_IR[15:11]), ((ID_EX_IR[31:26] == 6'b000000) | (ID_EX_IR[31:26] == 6'b101011) | (ID_EX_IR[31:26] == 6'b100011) | (ID_EX_IR[31:26] == 6'b111111) ), (EX_MEM_IR[31:26] == 6'b000000), EX_MEM_cmp_en);
+//    end
+    
+    wire [31:0] alu_out_part;
     wire [31:0] alu_out;
+    wire [31:0] cmp_data1;
+    wire [31:0] cmp_data2;
     
     my_alu u_alu(
-        .A          (ID_EX_rdata1),
-        .B          (ID_EX_rdata2),
+        .A          (alu_data1),
+        .B          (alu_data2),
         .Cin        (0     ),
         .Card       (ID_EX_alu_card),
-        .F          (alu_out)
+        .F          (alu_out_part)
     );
     
+                                                  // ({32{EX_MEM_sll_en}} & (EX_MEM_alu_data2 << EX_MEM_IR[10:6])) | 
+    assign alu_out =({32{~ID_EX_sll_en}} & alu_out_part) | ({32{ID_EX_sll_en}} & (alu_data2 << ID_EX_IR[10:6]));
     
     // 在执行阶段提前将数据存储器需要的内存读写使能赋出去
     assign data_sram_en = ID_EX_data_sram_en;
     assign data_sram_wen = ID_EX_data_sram_wen;
     
     // 数据存储器内存读地址，需要传递到MEM阶段
-    assign data_sram_addr = {32{ID_EX_data_sram_en}} & (ID_EX_rdata1 + {{16{ID_EX_IR[15]}}, ID_EX_IR[15:0]});    //sw或lw
+    assign data_sram_addr = {32{ID_EX_data_sram_en & ~((EX_MEM_data_sram_en == 1) & (EX_MEM_data_sram_wen != 4'b1111) & ID_EX_IR[25:21] == EX_MEM_IR[20:16] )}} & (alu_data1 + {{16{ID_EX_IR[15]}}, ID_EX_IR[15:0]})     |
+                            {32{ID_EX_data_sram_en &  ((EX_MEM_data_sram_en == 1) & (EX_MEM_data_sram_wen != 4'b1111) & ID_EX_IR[25:21] == EX_MEM_IR[20:16] )}} & (data_sram_rdata + {{16{ID_EX_IR[15]}}, ID_EX_IR[15:0]}) ;    //sw或lw
     // 数据存储器所写入的数据，需要传递到MEM阶段
-    assign data_sram_wdata = {32{ID_EX_data_sram_wen == 4'b1111}} & ID_EX_rdata2;
+    assign data_sram_wdata = ({32{(ID_EX_data_sram_wen == 4'b1111) & ((ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (EX_MEM_IR[31:26] == 6'b000000 ))}} & EX_MEM_alu_out)  |
+                             ({32{(ID_EX_data_sram_wen == 4'b1111) & ((ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (EX_MEM_IR[31:26] == 6'b111110 ))}} & EX_MEM_wdata_cmp)  |
+                             {32{(ID_EX_data_sram_wen == 4'b1111) & ~((ID_EX_IR[20:16] == EX_MEM_IR[15:11]) & (EX_MEM_IR[31:26] == 6'b000000 | EX_MEM_IR[31:26] == 6'b111110))}} & ID_EX_rdata2;
 
-    // EX/MEM
-    reg [31:0]  EX_MEM_IR;
-    reg         EX_MEM_we;
-    reg         EX_MEM_movz_en;
-    reg [4:0]   EX_MEM_waddr;
-    reg         EX_MEM_sll_en;
-    reg         EX_MEM_cmp_en;
-    reg         EX_MEM_alu_en;
-    reg [31:0]  EX_MEM_alu_out;
-    reg [31:0]  EX_MEM_rdata1;
-    reg [31:0]  EX_MEM_rdata2;
-    reg         EX_MEM_data_sram_en;
-    reg [3:0]   EX_MEM_data_sram_wen;
-    reg [31:0]  EX_MEM_pc;
-    reg         EX_MEM_invalid;
+//    always @(posedge clk) begin
+//           $display("Time %t: data_sram_wdata: %h, data_sram_addr: %h, ID_EX_rdata2: %h, EX_MEM_wdata_cmp: %h", $time,  data_sram_wdata,data_sram_addr, ID_EX_rdata2, EX_MEM_wdata_cmp );
+//    end
+    
+//    always @(posedge clk) begin
+//           $display("Time %t: ex_cmp_data1: %h, MEM_WB_wdata: %h, ex_cmp_data2: %h, ID_EX_rdata1: %h, ID_EX_rdata2: %h, ID_EX_IR: %h, EX_MEM_IR: %h", $time, ex_cmp_data1, EX_MEM_alu_out, ex_cmp_data2, ID_EX_rdata1, ID_EX_rdata2, ID_EX_IR, EX_MEM_IR);
+//    end
+    
+    // 与cmp相关的数据冲突
+    assign cmp_data2 = ({32{(MEM_WB_IR[31:26] == 6'b000000) & (MEM_WB_IR[15:11] == EX_MEM_IR[25:21])}} & EX_MEM_alu_out) | ( (~{32{(MEM_WB_IR[31:26] == 6'b000000) & (MEM_WB_IR[15:11] == EX_MEM_IR[25:21])}}) & ID_EX_rdata2);
+    assign cmp_data1 = ({32{(MEM_WB_IR[31:26] == 6'b000000) & (MEM_WB_IR[15:11] == EX_MEM_IR[20:16])}} & EX_MEM_alu_out) | ( (~{32{(MEM_WB_IR[31:26] == 6'b000000) & (MEM_WB_IR[15:11] == EX_MEM_IR[20:16])}}) & ID_EX_rdata1);
+    
+    
+    assign wdata_cmp = {32{ID_EX_cmp_en}} & { {22{1'b0}}, ~(cmp_data1 <= cmp_data2) , ~($signed(cmp_data1) <= $signed(cmp_data2)) ,~(cmp_data1 < cmp_data2) , ~($signed(cmp_data1) < $signed(cmp_data2)) ,~(cmp_data1 == cmp_data2) ,(cmp_data1 <= cmp_data2) ,($signed(cmp_data1) <= $signed(cmp_data2)) ,(cmp_data1 < cmp_data2) , ($signed(cmp_data1) < $signed(cmp_data2)) ,(cmp_data1 == cmp_data2)};
     
     always @(posedge clk) begin
+        // 寄存器的正常更新，不涉及旁路
         EX_MEM_IR               <=  ID_EX_IR;
         EX_MEM_we               <=  ID_EX_we;
         EX_MEM_waddr            <=  ID_EX_waddr;
@@ -259,18 +367,30 @@ module cpu(
         EX_MEM_alu_en           <=  ID_EX_alu_en;
         EX_MEM_pc               <=  ID_EX_pc;
         EX_MEM_invalid          <=  ID_EX_invalid;
+        EX_MEM_wdata_cmp        <=  wdata_cmp;
+        EX_MEM_data_sram_addr   <=  data_sram_addr;
+        EX_MEM_data_sram_wdata  <=  data_sram_wdata;
+        EX_MEM_alu_data1        <=  alu_data1;
+        EX_MEM_alu_data2        <=  alu_data2;
+
+        
+//        // 流水线锁
+//        if (EX_MEM_IR[31:26] == 6'b100011 & ID_EX_IR[31:26] == 6'b000000 & (EX_MEM_IR[20:16] == ID_EX_IR[25:21] | EX_MEM_IR[20:16] == ID_EX_IR[20:16]) ) begin
+//            EX_MEM_IR <= 32'b0;
+//        end else begin
+//            EX_MEM_IR <= ID_EX_IR;
+//        end
+        
     end
     
     //////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////     MEM   ///////////////////////////////
     //////////////////////////////////////////////////////////////////////////////
     
-
-
-       
-  
     wire we_movz;      // movz指令给出的写使能
-    assign we_movz = ((EX_MEM_rdata2 == 32'b0) & EX_MEM_movz_en);
+    assign we_movz = ((EX_MEM_IR[20:16] != MEM_WB_IR[15:11]) & (EX_MEM_rdata2 == 32'b0) & EX_MEM_movz_en) |
+                      ((EX_MEM_IR[20:16] == MEM_WB_IR[15:11]) & (MEM_WB_wdata == 32'b0) & EX_MEM_movz_en);
+    
     assign mem_wb_we = (EX_MEM_we | we_movz) & ~EX_MEM_invalid;       // 译码器没法读寄存器，所以只能判断部分写使能
     
 //    always @(posedge clk) begin
@@ -278,29 +398,20 @@ module cpu(
 //    end
     
     assign mem_wb_waddr = EX_MEM_waddr;
-    assign wdata_cmp = {32{EX_MEM_cmp_en}} & { {22{1'b0}}, ~(EX_MEM_rdata1 <= EX_MEM_rdata2) , ~($signed(EX_MEM_rdata1) <= $signed(EX_MEM_rdata2)) ,~(EX_MEM_rdata1 < EX_MEM_rdata2) , ~($signed(EX_MEM_rdata1) < $signed(EX_MEM_rdata2)) ,~(EX_MEM_rdata1 == EX_MEM_rdata2) ,(EX_MEM_rdata1 <= EX_MEM_rdata2) ,($signed(EX_MEM_rdata1) <= $signed(EX_MEM_rdata2)) ,(EX_MEM_rdata1 < EX_MEM_rdata2) , ($signed(EX_MEM_rdata1) < $signed(EX_MEM_rdata2)) ,(EX_MEM_rdata1 == EX_MEM_rdata2)};
-    assign wdata = (({32{EX_MEM_data_sram_en & ~(EX_MEM_data_sram_wen == 4'b1111)}} & data_sram_rdata) | ({32{EX_MEM_alu_en}} & EX_MEM_alu_out) | ({32{we_movz}} & EX_MEM_rdata1) | ({32{EX_MEM_sll_en}} & (EX_MEM_rdata2 << EX_MEM_IR[10:6])) | ({32{EX_MEM_cmp_en}} & wdata_cmp)) & {32{~EX_MEM_invalid}};
-    
+    // 读的时候
+    assign wdata = (({32{ ~((MEM_WB_data_sram_wen == 4'b1111)& ~((MEM_WB_data_sram_en == 1) & (MEM_WB_data_sram_addr == EX_MEM_IR[20:16])) & (MEM_WB_data_sram_addr == EX_MEM_data_sram_addr)) & EX_MEM_data_sram_en & ~(EX_MEM_data_sram_wen == 4'b1111)}} & data_sram_rdata) |         // 一般的内存读
+                   ({32{ ((MEM_WB_data_sram_wen == 4'b1111) & (MEM_WB_data_sram_addr == EX_MEM_data_sram_addr)) & EX_MEM_data_sram_en & ~(EX_MEM_data_sram_wen == 4'b1111)}} & MEM_WB_data_sram_wdata) |    // sw后的内存读
+                   ({32{EX_MEM_alu_en}} & EX_MEM_alu_out) | 
+                   ({32{we_movz}} & EX_MEM_alu_data1) | 
+                   // ({32{EX_MEM_sll_en}} & (EX_MEM_alu_data2 << EX_MEM_IR[10:6])) | 
+                   ({32{EX_MEM_cmp_en}} & EX_MEM_wdata_cmp)) & {32{~EX_MEM_invalid}};
+                        
 
 //    always @(posedge clk) begin
-//           $display("Time %t: wdata: %h, data_sram_rdata: %h, data_sram_addr: %h, data_sram_wdata: %h, data_sram_wen: %b", $time, wdata, data_sram_rdata, data_sram_addr, data_sram_wdata, data_sram_wen);
+//           $display("Time %t: wdata: %h, data_sram_wdata: %h , MEM_WB_wdata: %h,data_sram_rdata: %h, EX_MEM_data_sram_addr: %h ", $time, wdata, data_sram_wdata, MEM_WB_wdata,data_sram_rdata, EX_MEM_data_sram_addr);
 //    end
     
-    reg         MEM_WB_movz_en;
-    reg         MEM_WB_alu_en;
-    reg [31:0]  MEM_WB_alu_out;
-    reg [31:0]  MEM_WB_rdata1;
-    reg [31:0]  MEM_WB_rdata2;
-    reg [31:0]  MEM_WB_IR;
-    reg         MEM_WB_cmp_en;
-    reg         MEM_WB_movz_en;
-    reg         MEM_WB_sll_en;
-    reg         MEM_WB_data_sram_en;
-    reg [3:0]   MEM_WB_data_sram_wen;
-    reg         MEM_WB_we;
-    reg [4:0]   MEM_WB_waddr;
-    reg [31:0]  MEM_WB_pc;
-    reg         MEM_WB_invalid;
+    
     
     always @(posedge clk) begin
         MEM_WB_movz_en  <=  EX_MEM_movz_en;
@@ -318,6 +429,10 @@ module cpu(
         MEM_WB_waddr            <=  EX_MEM_waddr;
         MEM_WB_pc               <=  EX_MEM_pc;
         MEM_WB_invalid          <=  EX_MEM_invalid;
+        MEM_WB_data_sram_rdata  <=  data_sram_rdata;
+        MEM_WB_wdata            <=  wdata;
+        MEM_WB_data_sram_addr   <=  EX_MEM_data_sram_addr;
+        MEM_WB_data_sram_wdata  <=  EX_MEM_data_sram_wdata;
     end
     
     //////////////////////////////////////////////////////////////////////////////

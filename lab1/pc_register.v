@@ -26,6 +26,8 @@ module pc_register(
     input [31:0] jmp_addr,      // 跳转计算得到的地址
     input jmp,                  // jmp指令信号
     input resetn,               //复位信号
+    input  [31:0] ID_EX_IR,
+    input  [31:0] EX_MEM_IR,
     output [31:0] npc,    //当前指令地址
     output [31:0] pc,      // 下一条指令
     output inst_sram_en         // 内存读使能
@@ -33,7 +35,7 @@ module pc_register(
     
     reg [31:0] pc_reg;
     reg [31:0] npc_reg;
-    reg inst_sram_en_reg;
+    // reg inst_sram_en_reg;
     
     // 疑问1：如何安排指令寄存器读使能信号？ 能不能设置为一直为1
     
@@ -42,24 +44,32 @@ module pc_register(
         if (!resetn) begin
             pc_reg <= 32'b0;
             npc_reg <= 32'b100;
-            inst_sram_en_reg <= 1;  //能不能这么干？
+            // inst_sram_en_reg <= 1;  //能不能这么干？
         // 一般的情况下，需要依据npc的值，和跳转值和跳转地址进行多路选择
         end else begin
             // 如果跳转指令为真，那么将在ID阶段计算得到的jmp_addr赋值给pc
             if (jmp) begin
                 pc_reg <= jmp_addr;
+                // inst_sram_en_reg <= 1;
             end else begin
-                pc_reg <= npc_reg;
-                npc_reg <= npc_reg + 4;
+                if (EX_MEM_IR[31:26] == 6'b100011 & ID_EX_IR[31:26] == 6'b000000 & (EX_MEM_IR[20:16] == ID_EX_IR[25:21] | EX_MEM_IR[20:16] == ID_EX_IR[20:16]) ) begin
+                    // inst_sram_en_reg <= 0;
+                end else begin
+                    pc_reg <= npc_reg;
+                    npc_reg <= npc_reg + 4;
+                    // inst_sram_en_reg <= 1;
+                end
+//                pc_reg <= npc_reg;
+//                npc_reg <= npc_reg + 4;
             end
         end
-
     end
     
     // 将寄存器和外界输出连上线
     assign npc = npc_reg;
     assign pc  = pc_reg;
-    assign inst_sram_en = inst_sram_en_reg;
+    // assign inst_sram_en = inst_sram_en_reg;
+    assign inst_sram_en = ~(EX_MEM_IR[31:26] == 6'b100011 & ID_EX_IR[31:26] == 6'b000000 & (EX_MEM_IR[20:16] == ID_EX_IR[25:21] | EX_MEM_IR[20:16] == ID_EX_IR[20:16]));
     
 endmodule
 
